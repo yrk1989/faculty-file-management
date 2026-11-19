@@ -12,14 +12,36 @@ from pydantic import BaseModel
 import onedrive_service as od
 import storage
 
+FRONTEND = "http://localhost:3000"
+
 app = FastAPI(title="Faculty Portal API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[FRONTEND, "http://127.0.0.1:3000"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Faculty the frontend's course table refers to (matched by initials).
+SEED_FACULTY = [
+    ("Dr. S. Sampath Kumar", "SSK"), ("Dr. Veramachaneni Sree Hari", "VSH"),
+    ("Dr. Nimeshika Venkatesan", "NV"), ("Dr. K. S. Gayathri", "KSG"),
+    ("Dr. E. Suganya", "ES"), ("Dr. V. Durgadevi", "VDD"),
+    ("Dr. A. Saravanan", "SA"), ("Dr. L. Ilakkiya", "LI"),
+    ("Ms. B. Naveena", "BN"),
+]
+
+
+@app.on_event("startup")
+def seed():
+    if not storage.load("teachers"):
+        for name, ini in SEED_FACULTY:
+            storage.add("teachers", {
+                "name": name, "email": f"{ini.lower()}@example.edu", "department": "IT",
+                "initials": ini, "designation": "Faculty", "phone": "", "cabin": "",
+                "research": "", "qualification": "", "photo": "",
+            })
 
 
 # ---------- Request shapes ----------
@@ -27,6 +49,26 @@ class TeacherIn(BaseModel):
     name: str
     email: str
     department: str | None = None
+    initials: str | None = None
+    designation: str | None = None
+    phone: str | None = None
+    cabin: str | None = None
+    research: str | None = None
+    qualification: str | None = None
+    photo: str | None = None  # data URL
+
+
+class TeacherUpdate(BaseModel):
+    name: str | None = None
+    email: str | None = None
+    department: str | None = None
+    initials: str | None = None
+    designation: str | None = None
+    phone: str | None = None
+    cabin: str | None = None
+    research: str | None = None
+    qualification: str | None = None
+    photo: str | None = None
 
 
 class StudentIn(BaseModel):
@@ -46,6 +88,7 @@ class AssignmentIn(BaseModel):
 
 class ODDecision(BaseModel):
     status: Literal["approved", "rejected"]
+    remark: str = ""
 
 
 # ---------- Helpers ----------
@@ -64,12 +107,27 @@ def upload_via_temp(file: UploadFile, teacher_id: int, doc_type: str, student_na
     return result["file_url"]
 
 
+def ensure_student(name: str, register_number: str, department: str | None):
+    for s in storage.load("students"):
+        if s["register_number"] == register_number:
+            return s
+    return storage.add("students", {
+        "register_number": register_number, "name": name,
+        "email": None, "department": department, "year": None,
+    })
+
+
 # ---------- OneDrive connection ----------
 @app.get("/teachers/{teacher_id}/onedrive/connect")
 def connect_onedrive(teacher_id: int):
     if not storage.get("teachers", teacher_id):
         raise HTTPException(404, "Teacher not found")
     return {"login_url": od.get_teacher_login_url(str(teacher_id))}
+
+
+@app.get("/teachers/{teacher_id}/onedrive/status")
+def onedrive_status(teacher_id: int):
+    return {"connected": str(teacher_id) in od._load_tokens()}
 
 
 @app.get("/callback")   # must match REDIRECT_URI in onedrive_service.py
@@ -79,7 +137,7 @@ def callback(code: str = None, state: str = None, error: str = None):
     result = od.save_teacher_token(state, code)
     if not result["success"]:
         raise HTTPException(400, result["error"])
-    return RedirectResponse("http://localhost:3000/teacher/dashboard")
+    return RedirectResponse(f"{FRONTEND}/?connected=1")
 
 
 # ---------- Teachers ----------
@@ -101,6 +159,14 @@ def get_teacher(teacher_id: int):
     if not teacher:
         raise HTTPException(404, "Teacher not found")
     return teacher
+
+
+@app.put("/teachers/{teacher_id}")
+def update_teacher(teacher_id: int, data: TeacherUpdate):
+    updated = storage.update("teachers", teacher_id, data.model_dump(exclude_none=True))
+    if not updated:
+        raise HTTPException(404, "Teacher not found")
+    return updated
 
 
 # ---------- Students ----------
@@ -180,30 +246,44 @@ def submit_assignment(
 # ---------- OD requests ----------
 @app.post("/od-requests")
 def create_od_request(
-    student_id: int = Form(...),
+    student_name: str = Form(...),
+    register_number: str = Form(...),
+    department: str = Form(""),
+    year_section: str = Form(""),
     teacher_id: int = Form(...),
-    reason: str = Form(...),
+    category: str = Form(...),
+    event: str = Form(...),
+    venue: str = Form(...),
     from_date: datetime = Form(...),
     to_date: datetime = Form(...),
     proof: UploadFile | None = File(None),
 ):
-    student = storage.get("students", student_id)
-    if not student or not storage.get("teachers", teacher_id):
-        raise HTTPException(404, "Student or teacher not found")
-    if to_date < from_date:
+    if not storage.get("teachers", teacher_id):
+        raise HTTPException(404, "Teacher not found")
+    if to_date <= from_date:
         raise HTTPException(400, "to_date must be after from_date")
+
+    student = ensure_student(student_name, register_number, department)
 
     proof_url = None
     if proof and proof.filename:
         proof_url = upload_via_temp(proof, teacher_id, "od", student["name"])
 
     return storage.add("od_requests", {
-        "student_id": student_id,
+        "student_id": student["id"],
+        "student_name": student_name,
+        "register_number": register_number,
+        "department": department,
+        "year_section": year_section,
         "teacher_id": teacher_id,
-        "reason": reason,
+        "category": category,
+        "event": event,
+        "venue": venue,
+        "reason": f"{category}: {event}",
         "from_date": from_date.isoformat(),
         "to_date": to_date.isoformat(),
         "status": "pending",
+        "remark": "",
         "proof_url": proof_url,
         "created_at": datetime.utcnow().isoformat(),
     })
@@ -224,7 +304,8 @@ def list_od_requests(student_id: int | None = None, teacher_id: int | None = Non
 
 @app.patch("/od-requests/{od_id}")
 def decide_od_request(od_id: int, data: ODDecision):
-    updated = storage.update("od_requests", od_id, {"status": data.status})
+    updated = storage.update("od_requests", od_id,
+                             {"status": data.status, "remark": data.remark})
     if not updated:
         raise HTTPException(404, "OD request not found")
     return updated
