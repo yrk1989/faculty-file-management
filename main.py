@@ -351,3 +351,5 @@ def od_report(admin_id: int):
     if not result["success"]:
         raise HTTPException(403, result["error"])
     return result
+from faculty_profile import router as faculty_router
+app.include_router(faculty_router)
