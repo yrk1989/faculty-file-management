@@ -93,7 +93,8 @@ class ODDecision(BaseModel):
 
 # ---------- Helpers ----------
 def upload_via_temp(file: UploadFile, teacher_id: int, doc_type: str, student_name: str):
-    """Save the upload to a temp file, send it to the teacher's OneDrive, clean up."""
+    """Save the upload to a temp file, send it to the teacher's OneDrive, clean up.
+    doc_type: "assignment" | "od_permission" | "od_proof" """
     suffix = os.path.splitext(file.filename)[1]
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         shutil.copyfileobj(file.file, tmp)
@@ -256,7 +257,7 @@ def create_od_request(
     venue: str = Form(...),
     from_date: datetime = Form(...),
     to_date: datetime = Form(...),
-    proof: UploadFile | None = File(None),
+    proof: UploadFile | None = File(None),   # now treated as the permission letter
 ):
     if not storage.get("teachers", teacher_id):
         raise HTTPException(404, "Teacher not found")
@@ -265,9 +266,10 @@ def create_od_request(
 
     student = ensure_student(student_name, register_number, department)
 
-    proof_url = None
+    # CHANGED: the file sent with the request is the permission letter
+    letter_url = None
     if proof and proof.filename:
-        proof_url = upload_via_temp(proof, teacher_id, "od", student["name"])
+        letter_url = upload_via_temp(proof, teacher_id, "od_permission", student["name"])
 
     return storage.add("od_requests", {
         "student_id": student["id"],
@@ -284,7 +286,10 @@ def create_od_request(
         "to_date": to_date.isoformat(),
         "status": "pending",
         "remark": "",
-        "proof_url": proof_url,
+        "permission_letter_url": letter_url,   # CHANGED
+        "proof_url": None,                     # CHANGED: filled after approval
+        "proof_submitted_at": None,            # NEW
+        "decided_at": None,                    # NEW
         "created_at": datetime.utcnow().isoformat(),
     })
 
@@ -302,12 +307,47 @@ def list_od_requests(student_id: int | None = None, teacher_id: int | None = Non
     return sorted(items, key=lambda i: i["created_at"], reverse=True)
 
 
+# CHANGED: a request can only be decided once
 @app.patch("/od-requests/{od_id}")
 def decide_od_request(od_id: int, data: ODDecision):
-    updated = storage.update("od_requests", od_id,
-                             {"status": data.status, "remark": data.remark})
-    if not updated:
+    rec = storage.get("od_requests", od_id)
+    if not rec:
         raise HTTPException(404, "OD request not found")
-    return updated
-from faculty_profile import router as faculty_router
-app.include_router(faculty_router)
+    if rec["status"] != "pending":
+        raise HTTPException(400, f"OD already {rec['status']}")
+    return storage.update("od_requests", od_id, {
+        "status": data.status,
+        "remark": data.remark,
+        "decided_at": datetime.utcnow().isoformat(),
+    })
+
+
+# NEW: proof upload, allowed only after approval
+@app.post("/od-requests/{od_id}/proof")
+def submit_od_proof(od_id: int, register_number: str = Form(...), file: UploadFile = File(...)):
+    rec = storage.get("od_requests", od_id)
+    if not rec:
+        raise HTTPException(404, "OD request not found")
+    if rec["register_number"] != register_number:
+        raise HTTPException(403, "This OD does not belong to this student")
+    if rec["status"] != "approved":
+        raise HTTPException(400, "Proof can only be submitted for an approved OD")
+    if rec.get("proof_url"):
+        raise HTTPException(409, "Proof already submitted")
+
+    url = upload_via_temp(file, rec["teacher_id"], "od_proof", rec["student_name"])
+    return storage.update("od_requests", od_id, {
+        "proof_url": url,
+        "proof_submitted_at": datetime.utcnow().isoformat(),
+    })
+
+
+# NEW (optional): Excel report. Needs the build_od_excel change in section 3.
+@app.get("/admin/od-report")
+def od_report(admin_id: int):
+    rows = [{**r, "od_id": f"OD-{r['id']}", "event_name": r.get("event"),
+             "remarks": r.get("remark")} for r in storage.load("od_requests")]
+    result = od.admin_export_od_excel(str(admin_id), records=rows)
+    if not result["success"]:
+        raise HTTPException(403, result["error"])
+    return result
