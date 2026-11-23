@@ -1,10 +1,17 @@
 import os
 import re
+import io
 import json
 import secrets
+import threading
+from datetime import datetime, date
+
 import msal
 import requests
 from urllib.parse import quote
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl.utils import get_column_letter
 
 CLIENT_ID = "0658ab66-b40c-4d28-8038-78412d51e828"
 CLIENT_SECRET = os.environ.get("CLIENT_SECRET")
@@ -12,7 +19,13 @@ AUTHORITY = "https://login.microsoftonline.com/common"
 SCOPES = ["Files.ReadWrite"]
 REDIRECT_URI = "http://localhost:5000/callback"
 TOKEN_FILE = "teacher_tokens.json"
+OD_FILE = "od_records.json"
 GRAPH_BASE = "https://graph.microsoft.com/v1.0"
+
+# Comma-separated teacher IDs that are admins, e.g. ADMIN_TEACHER_IDS="T001,T014"
+ADMIN_TEACHER_IDS = {
+    t.strip() for t in os.environ.get("ADMIN_TEACHER_IDS", "").split(",") if t.strip()
+}
 
 if not CLIENT_SECRET:
     raise RuntimeError("CLIENT_SECRET environment variable is not set.")
@@ -25,18 +38,38 @@ msal_app = msal.ConfidentialClientApplication(
 
 # state nonce -> teacher_id (use a database/session store in a real app)
 _pending_states = {}
+_file_lock = threading.Lock()
+
+
+# ----------------------------------------------------------------------------
+# Simple JSON file storage helpers (no database needed)
+# ----------------------------------------------------------------------------
+def _load_json(path, default):
+    if os.path.exists(path):
+        with open(path, "r") as f:
+            return json.load(f)
+    return default
+
+
+def _save_json(path, data):
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2)
 
 
 def _load_tokens():
-    if os.path.exists(TOKEN_FILE):
-        with open(TOKEN_FILE, "r") as f:
-            return json.load(f)
-    return {}
+    return _load_json(TOKEN_FILE, {})
 
 
 def _save_tokens(tokens):
-    with open(TOKEN_FILE, "w") as f:
-        json.dump(tokens, f, indent=2)
+    _save_json(TOKEN_FILE, tokens)
+
+
+def _load_ods():
+    return _load_json(OD_FILE, {})
+
+
+def _save_ods(records):
+    _save_json(OD_FILE, records)
 
 
 def _safe_name(text):
@@ -45,6 +78,17 @@ def _safe_name(text):
     return cleaned.strip(" .") or "unnamed"
 
 
+def _now():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def is_admin(teacher_id):
+    return teacher_id in ADMIN_TEACHER_IDS
+
+
+# ----------------------------------------------------------------------------
+# Microsoft login
+# ----------------------------------------------------------------------------
 # 1. Generate the Microsoft login link for a teacher
 def get_teacher_login_url(teacher_id):
     state = secrets.token_urlsafe(16)
@@ -57,7 +101,6 @@ def get_teacher_login_url(teacher_id):
 
 
 # 2. Save the teacher's refresh token after they click Accept
-#    `state` is the value Microsoft sends back in the callback URL
 def save_teacher_token(state, auth_code):
     teacher_id = _pending_states.pop(state, None)
     if teacher_id is None:
@@ -71,55 +114,269 @@ def save_teacher_token(state, auth_code):
     if "refresh_token" not in result:
         return {"success": False, "error": result.get("error_description")}
 
-    tokens = _load_tokens()
-    tokens[teacher_id] = result["refresh_token"]
-    _save_tokens(tokens)
-    return {"success": True, "teacher_id": teacher_id}
-
-
-# 3. Upload a student's file to that teacher's OneDrive
-def upload_to_teacher_onedrive(teacher_id, local_file_path, doc_type, student_name):
-    if not os.path.isfile(local_file_path):
-        return {"success": False, "error": f"File not found: {local_file_path}"}
-
-    tokens = _load_tokens()
-    if teacher_id not in tokens:
-        return {"success": False, "error": "Teacher has not connected OneDrive yet."}
-
-    result = msal_app.acquire_token_by_refresh_token(
-        tokens[teacher_id],
-        scopes=SCOPES,
-    )
-    if "access_token" not in result:
-        return {
-            "success": False,
-            "error": result.get("error_description", "Token expired. Teacher needs to reconnect."),
-        }
-
-    # Refresh tokens rotate, so save the new one
-    if "refresh_token" in result:
+    with _file_lock:
+        tokens = _load_tokens()
         tokens[teacher_id] = result["refresh_token"]
         _save_tokens(tokens)
+    return {"success": True, "teacher_id": teacher_id, "is_admin": is_admin(teacher_id)}
 
-    access_token = result["access_token"]
 
-    original_name = _safe_name(os.path.basename(local_file_path))
-    clean_filename = f"{_safe_name(student_name)}_{original_name}"
-    folder_category = "Assignments" if doc_type.lower() == "assignment" else "OD_Requests"
+# ----------------------------------------------------------------------------
+# OneDrive helpers
+# ----------------------------------------------------------------------------
+def _get_access_token(teacher_id):
+    """Returns (access_token, error_message)."""
+    with _file_lock:
+        tokens = _load_tokens()
+        if teacher_id not in tokens:
+            return None, "Teacher has not connected OneDrive yet."
 
-    item_path = quote(f"Faculty_Portal/{folder_category}/{clean_filename}")  # keeps "/" intact
-    upload_url = (
+        result = msal_app.acquire_token_by_refresh_token(tokens[teacher_id], scopes=SCOPES)
+        if "access_token" not in result:
+            return None, result.get(
+                "error_description", "Token expired. Teacher needs to reconnect."
+            )
+
+        # Refresh tokens rotate, so save the new one
+        if "refresh_token" in result:
+            tokens[teacher_id] = result["refresh_token"]
+            _save_tokens(tokens)
+
+    return result["access_token"], None
+
+
+def _upload(access_token, folder, filename, fileobj, conflict="rename"):
+    """Upload a file-like object to /Faculty_Portal/<folder>/<filename>."""
+    item_path = quote(f"Faculty_Portal/{folder}/{filename}")  # keeps "/" intact
+    url = (
         f"{GRAPH_BASE}/me/drive/root:/{item_path}:/content"
-        f"?@microsoft.graph.conflictBehavior=rename"
+        f"?@microsoft.graph.conflictBehavior={conflict}"
     )
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/octet-stream",
     }
-
-    with open(local_file_path, "rb") as file_data:
-        response = requests.put(upload_url, headers=headers, data=file_data, timeout=120)
-
+    response = requests.put(url, headers=headers, data=fileobj, timeout=120)
     if response.status_code in (200, 201):
         return {"success": True, "file_url": response.json().get("webUrl")}
     return {"success": False, "error": f"{response.status_code}: {response.text}"}
+
+
+# ----------------------------------------------------------------------------
+# OD flow
+#   Step 1: Student requests OD permission  -> status "pending"
+#   Step 2: Teacher approves / rejects      -> "approved" / "rejected"
+#   Step 3: Student submits OD proof        -> only allowed after approval
+# ----------------------------------------------------------------------------
+# STEP 1 - OD permission request
+def submit_od_permission(teacher_id, student_name, event_name, from_date, to_date,
+                         reason, letter_path=None):
+    """
+    from_date / to_date: "YYYY-MM-DD".
+    letter_path: optional permission letter, uploaded to the teacher's OneDrive.
+    """
+    try:
+        d1 = date.fromisoformat(from_date)
+        d2 = date.fromisoformat(to_date)
+    except ValueError:
+        return {"success": False, "error": "Dates must be in YYYY-MM-DD format."}
+    if d2 < d1:
+        return {"success": False, "error": "to_date cannot be before from_date."}
+
+    if teacher_id not in _load_tokens():
+        return {"success": False, "error": "Teacher has not connected OneDrive yet."}
+
+    letter_url = None
+    if letter_path:
+        if not os.path.isfile(letter_path):
+            return {"success": False, "error": f"File not found: {letter_path}"}
+        token, err = _get_access_token(teacher_id)
+        if err:
+            return {"success": False, "error": err}
+        name = f"{_safe_name(student_name)}_{_safe_name(os.path.basename(letter_path))}"
+        with open(letter_path, "rb") as f:
+            up = _upload(token, "OD_Permission", name, f)
+        if not up["success"]:
+            return up
+        letter_url = up["file_url"]
+
+    od_id = "OD-" + secrets.token_hex(4).upper()
+    record = {
+        "od_id": od_id,
+        "student_name": student_name,
+        "teacher_id": teacher_id,
+        "event_name": event_name,
+        "from_date": from_date,
+        "to_date": to_date,
+        "reason": reason,
+        "permission_letter_url": letter_url,
+        "status": "pending",
+        "remarks": "",
+        "decided_by": None,
+        "decided_at": None,
+        "proof_url": None,
+        "proof_submitted_at": None,
+        "created_at": _now(),
+    }
+    with _file_lock:
+        records = _load_ods()
+        records[od_id] = record
+        _save_ods(records)
+    return {"success": True, "od_id": od_id}
+
+
+# STEP 2 - Faculty approves / rejects
+def decide_od(teacher_id, od_id, decision, remarks=""):
+    decision = decision.lower()
+    if decision not in ("approved", "rejected"):
+        return {"success": False, "error": "decision must be 'approved' or 'rejected'."}
+
+    with _file_lock:
+        records = _load_ods()
+        rec = records.get(od_id)
+        if not rec:
+            return {"success": False, "error": "OD request not found."}
+        if rec["teacher_id"] != teacher_id and not is_admin(teacher_id):
+            return {"success": False, "error": "You are not allowed to decide this OD."}
+        if rec["status"] != "pending":
+            return {"success": False, "error": f"OD already {rec['status']}."}
+
+        rec.update(
+            status=decision,
+            remarks=remarks,
+            decided_by=teacher_id,
+            decided_at=_now(),
+        )
+        _save_ods(records)
+    return {"success": True, "od_id": od_id, "status": decision}
+
+
+# STEP 3 - OD proof submission (only after approval)
+def submit_od_proof(od_id, student_name, local_file_path):
+    if not os.path.isfile(local_file_path):
+        return {"success": False, "error": f"File not found: {local_file_path}"}
+
+    records = _load_ods()
+    rec = records.get(od_id)
+    if not rec:
+        return {"success": False, "error": "OD request not found."}
+    if rec["student_name"].strip().lower() != student_name.strip().lower():
+        return {"success": False, "error": "This OD does not belong to this student."}
+    if rec["status"] != "approved":
+        return {"success": False, "error": "Proof can only be submitted for an approved OD."}
+    if rec["proof_url"]:
+        return {"success": False, "error": "Proof already submitted for this OD."}
+
+    token, err = _get_access_token(rec["teacher_id"])
+    if err:
+        return {"success": False, "error": err}
+
+    name = f"{od_id}_{_safe_name(student_name)}_{_safe_name(os.path.basename(local_file_path))}"
+    with open(local_file_path, "rb") as f:
+        up = _upload(token, "OD_Proof", name, f)
+    if not up["success"]:
+        return up
+
+    with _file_lock:
+        records = _load_ods()
+        records[od_id]["proof_url"] = up["file_url"]
+        records[od_id]["proof_submitted_at"] = _now()
+        _save_ods(records)
+    return {"success": True, "file_url": up["file_url"]}
+
+
+# Teacher's own list (admins see everything)
+def list_ods_for_teacher(teacher_id, status=None):
+    records = list(_load_ods().values())
+    if not is_admin(teacher_id):
+        records = [r for r in records if r["teacher_id"] == teacher_id]
+    if status:
+        records = [r for r in records if r["status"] == status]
+    return sorted(records, key=lambda r: r["created_at"], reverse=True)
+
+
+# ----------------------------------------------------------------------------
+# ADMIN: Excel report of all approved / rejected ODs
+# ----------------------------------------------------------------------------
+_EXCEL_COLUMNS = [
+    ("OD ID", "od_id"),
+    ("Student", "student_name"),
+    ("Faculty ID", "teacher_id"),
+    ("Event", "event_name"),
+    ("From", "from_date"),
+    ("To", "to_date"),
+    ("Reason", "reason"),
+    ("Status", "status"),
+    ("Remarks", "remarks"),
+    ("Decided By", "decided_by"),
+    ("Decided At", "decided_at"),
+    ("Proof Submitted", "proof_submitted_at"),
+    ("Proof Link", "proof_url"),
+    ("Permission Letter", "permission_letter_url"),
+    ("Requested At", "created_at"),
+]
+
+
+def _fill_sheet(ws, rows, header_color):
+    ws.append([h for h, _ in _EXCEL_COLUMNS])
+    for cell in ws[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor=header_color)
+        cell.alignment = Alignment(horizontal="center")
+
+    for r in rows:
+        ws.append([r.get(key) or "" for _, key in _EXCEL_COLUMNS])
+
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = ws.dimensions
+    for i, (header, key) in enumerate(_EXCEL_COLUMNS, start=1):
+        longest = max([len(header)] + [len(str(r.get(key) or "")) for r in rows])
+        ws.column_dimensions[get_column_letter(i)].width = min(longest + 2, 45)
+
+
+def build_od_excel(path="OD_Report.xlsx"):
+    """Builds the workbook locally: sheets for Approved, Rejected, and All decided."""
+    records = sorted(_load_ods().values(), key=lambda r: r["created_at"], reverse=True)
+    approved = [r for r in records if r["status"] == "approved"]
+    rejected = [r for r in records if r["status"] == "rejected"]
+
+    wb = Workbook()
+    ws_all = wb.active
+    ws_all.title = "All Decided"
+    _fill_sheet(ws_all, approved + rejected, "1F4E78")
+    _fill_sheet(wb.create_sheet("Approved"), approved, "2E7D32")
+    _fill_sheet(wb.create_sheet("Rejected"), rejected, "C62828")
+
+    wb.save(path)
+    return path, len(approved), len(rejected)
+
+
+def admin_export_od_excel(admin_id, local_path="OD_Report.xlsx", upload=True):
+    """
+    Admin only. Creates the Excel report, and (optionally) uploads it to the
+    admin's own OneDrive at Faculty_Portal/Admin_Reports/OD_Report.xlsx
+    (overwritten each time so it always holds the latest data).
+    """
+    if not is_admin(admin_id):
+        return {"success": False, "error": "Only an admin can export the OD report."}
+
+    path, n_approved, n_rejected = build_od_excel(local_path)
+    result = {
+        "success": True,
+        "local_file": path,
+        "approved": n_approved,
+        "rejected": n_rejected,
+    }
+
+    if upload:
+        token, err = _get_access_token(admin_id)
+        if err:
+            result["upload_error"] = err
+            return result
+        with open(path, "rb") as f:
+            up = _upload(token, "Admin_Reports", "OD_Report.xlsx", f, conflict="replace")
+        if up["success"]:
+            result["onedrive_url"] = up["file_url"]
+        else:
+            result["upload_error"] = up["error"]
+    return result
