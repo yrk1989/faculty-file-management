@@ -309,6 +309,3 @@ def decide_od_request(od_id: int, data: ODDecision):
     if not updated:
         raise HTTPException(404, "OD request not found")
     return updated
-
-from faculty_profile import router as faculty_router
-app.include_router(faculty_router)
