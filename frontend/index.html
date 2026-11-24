@@ -65,7 +65,7 @@ const api=async(path,opts={})=>{
   return r.json()};
 const cap=s=>s?s[0].toUpperCase()+s.slice(1):'';
 const fromTeacher=t=>({id:String(t.id),name:t.name,ini:t.initials||'',desig:t.designation||'Faculty',dept:t.department||'IT',email:t.email||'',phone:t.phone||'',cabin:t.cabin||'',research:t.research||'',qual:t.qualification||'',photo:t.photo||''});
-const fromOD=o=>({id:String(o.id),student:o.student_name||'',roll:o.register_number||'',dept:o.department||'',ys:o.year_section||'',mentor:String(o.teacher_id),cat:o.category||'',event:o.event||o.reason||'',venue:o.venue||'',from:o.from_date,to:o.to_date,proofUrl:o.proof_url||'',status:cap(o.status),remark:o.remark||''});
+const fromOD=o=>({id:String(o.id),student:o.student_name||'',roll:o.register_number||'',dept:o.department||'',ys:o.year_section||'',mentor:String(o.teacher_id),cat:o.category||'',event:o.event||o.reason||'',venue:o.venue||'',from:o.from_date,to:o.to_date,proofUrl:o.proof_url||o.permission_letter_url||'',status:cap(o.status),remark:o.remark||''});
 async function load(){
   const [t,o,students,assignments]=await Promise.all([api('/teachers'),api('/od-requests'),api('/students'),api('/assignments')]);
   S.f=t.map(fromTeacher);S.o=o.map(fromOD);S.students=students;S.assignments=assignments}
@@ -159,7 +159,7 @@ return `<div class="grid gap-5">${l.map(o=>`<article class="card"><div class="fl
 <p class="text-sm mt-1">${esc(o.student)} (${esc(o.roll)}) · ${esc(o.cat)} · ${esc(o.venue)}</p><p class="text-sm">${fmt(o.from)} to ${fmt(o.to)}</p>
 <p class="text-sm">Mentor: ${esc(fname(o.mentor))}</p>${o.proofUrl?`<a class="text-sm underline font-bold" href="${esc(o.proofUrl)}" target="_blank" rel="noopener">Open proof</a>`:''}${o.remark?`<p class="mt-2 p-3 rounded-xl bg-[#F3F3F3] border border-[#191A23] text-sm">Remarks: ${esc(o.remark)}</p>`:''}</article>`).join('')}</div>`}
 
-const odBox=()=>`<div class="card ${S.odc?'':'grey'} mb-6 flex flex-wrap items-center justify-between gap-3"><div><p class="font-bold">OneDrive connection</p><p class="text-sm">${S.odc?'Connected. OD proof uploads are saved in Faculty_Portal/OD_Requests in your OneDrive.':'Not connected. Connect Microsoft OneDrive before students attach OD proof files.'}</p></div>${S.odc?'<span class="badge s-Approved">Connected</span>':'<button class="btn lime" data-a="connect">Connect OneDrive</button>'}</div>`;
+const odBox=()=>`<div class="card ${S.odc?'':'grey'} mb-6 flex flex-wrap items-center justify-between gap-3"><div><p class="font-bold">OneDrive connection</p><p class="text-sm">${S.odc?'Connected. OD proof uploads are saved in Faculty_Portal/OD_Permission in your OneDrive.':'Not connected. Connect Microsoft OneDrive before students attach OD proof files.'}</p></div>${S.odc?'<span class="badge s-Approved">Connected</span>':'<button class="btn lime" data-a="connect">Connect OneDrive</button>'}</div>`;
 
 function approve(){const l=S.o.filter(o=>o.mentor===S.user.fid).sort((a,b)=>(a.status==='Pending'?0:1)-(b.status==='Pending'?0:1));
 if(!l.length)return odBox()+`<div class="card grey">No requests assigned to you yet.</div>`;
@@ -245,7 +245,7 @@ else if(a==='dec'){busy(b,true);
 }catch(err){busy(b,false);toast(err.message,true)}});
 
 document.addEventListener('input',e=>{if(e.target.id==='q'){S.q=e.target.value;$('#grid').innerHTML=cards()}});
-document.addEventListener('change',async e=>{if(e.target.id==='mentor'){const m=S.f.find(x=>x.name===e.target.value);const hint=$('#onedriveHint');if(!hint)return;if(!m){hint.textContent='Select a faculty member from the suggestions.';return}try{const r=await api(`/teachers/${m.id}/onedrive/status`);hint.textContent=r.connected?'This mentor has connected OneDrive. Proof uploads will be saved to their Faculty_Portal/OD_Requests folder.':'This mentor has not connected OneDrive. You can submit without a proof file, but an attached file will fail until they connect.'}catch(err){hint.textContent=err.message}}});
+document.addEventListener('change',async e=>{if(e.target.id==='mentor'){const m=S.f.find(x=>x.name===e.target.value);const hint=$('#onedriveHint');if(!hint)return;if(!m){hint.textContent='Select a faculty member from the suggestions.';return}try{const r=await api(`/teachers/${m.id}/onedrive/status`);hint.textContent=r.connected?'This mentor has connected OneDrive. Proof uploads will be saved to their Faculty_Portal/OD_Permission folder.':'This mentor has not connected OneDrive. You can submit without a proof file, but an attached file will fail until they connect.'}catch(err){hint.textContent=err.message}}});
 const read=f=>new Promise(r=>{if(!f||f.size>1500000)return r('');const x=new FileReader();x.onload=()=>r(x.result);x.readAsDataURL(f)});
 document.addEventListener('submit',async e=>{e.preventDefault();const f=e.target,v=Object.fromEntries(new FormData(f)),btn=f.querySelector('[type=submit]');
 try{
