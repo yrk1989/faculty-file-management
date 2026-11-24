@@ -1,0 +1,40 @@
+[
+  {
+    "student_id": 1,
+    "student_name": "Demo Student",
+    "register_number": "2025IT0001",
+    "department": "IT",
+    "year_section": "I / A",
+    "teacher_id": 1,
+    "category": "Hackathon",
+    "event": "abc",
+    "venue": "dfg",
+    "reason": "Hackathon: abc",
+    "from_date": "2026-11-27T14:47:00",
+    "to_date": "2026-11-28T14:47:00",
+    "status": "pending",
+    "remark": "",
+    "proof_url": "https://onedrive.live.com?cid=34e749730923a5f7&id=34E749730923A5F7!sce008df2465c422aaf380e774d74c84b",
+    "created_at": "2026-11-19T09:17:37.279363",
+    "id": 1
+  },
+  {
+    "student_id": 1,
+    "student_name": "Demo Student",
+    "register_number": "2025IT0001",
+    "department": "IT",
+    "year_section": "I / A",
+    "teacher_id": 1,
+    "category": "Hackathon",
+    "event": "asd",
+    "venue": "rgh",
+    "reason": "Hackathon: asd",
+    "from_date": "2026-11-19T15:16:00",
+    "to_date": "2026-12-05T15:16:00",
+    "status": "pending",
+    "remark": "",
+    "proof_url": "https://onedrive.live.com?cid=34e749730923a5f7&id=34E749730923A5F7!s458b434f782a42c3af8a8c1c1f533a37",
+    "created_at": "2026-11-19T09:47:11.270791",
+    "id": 2
+  }
+]

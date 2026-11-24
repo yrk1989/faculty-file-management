@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='16' fill='%23B9FF66'/><text x='32' y='46' font-size='40' text-anchor='middle' fill='%23191A23'>✦</text></svg>">
+<title>Project Nexus</title>
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:light}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{font-family:'Space Grotesk',system-ui,sans-serif;background:#fff;color:#191A23}
+.card{border:1.5px solid #191A23;border-radius:28px;box-shadow:0 5px 0 #191A23;background:#fff;padding:20px}
+.card.grey{background:#F3F3F3}.card.dark{background:#191A23;color:#fff}
+.inp{width:100%;border:1.5px solid #191A23;border-radius:12px;padding:10px 14px;background:#fff;font:inherit}
+.inp:focus,.btn:focus-visible{outline:3px solid #B9FF66;outline-offset:2px}
+.btn{border:1.5px solid #191A23;border-radius:12px;padding:10px 18px;font-weight:500;background:#191A23;color:#fff;box-shadow:0 3px 0 #191A23;cursor:pointer}
+.btn:disabled{opacity:.6;cursor:wait}
+.btn.lime{background:#B9FF66;color:#191A23}.btn.ghost{background:#fff;color:#191A23}
+.btn:active{transform:translateY(3px);box-shadow:none}
+.tag{background:#B9FF66;border:1.5px solid #191A23;padding:2px 12px;border-radius:8px;font-weight:700;display:inline-block}
+.pill{border:1.5px solid #191A23;border-radius:999px;padding:6px 16px;cursor:pointer;background:#fff}
+.pill.on{background:#B9FF66;font-weight:700}
+.badge{border:1.5px solid #191A23;border-radius:999px;padding:2px 12px;font-size:13px;font-weight:700}
+.s-Pending{background:#F3F3F3;color:#191A23}.s-Approved{background:#B9FF66;color:#191A23}.s-Rejected{background:#191A23;color:#fff}
+.frame{width:72px;height:72px;border:1.5px solid #191A23;border-radius:22px 22px 22px 6px;background:#B9FF66;overflow:hidden;display:grid;place-items:center;font-weight:700;font-size:24px;flex:none}
+.frame img{width:100%;height:100%;object-fit:cover}
+label{font-weight:500;font-size:14px;display:block;margin-bottom:4px}
+.tbl{overflow-x:auto}
+html{min-height:100%;background:linear-gradient(180deg,#191A23 0%,#1d2a26 30%,#2f5a24 60%,#6fbf3a 82%,#b9ff66 100%) fixed}
+body{background:transparent}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);background:#191A23;z-index:30}
+section{scroll-margin-top:96px}
+header{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:#191A23;border:1.5px solid #B9FF66;border-radius:0 0 22px 22px}
+.nl{color:#fff;background:none;font:inherit;font-weight:500;padding:6px 2px;border-bottom:3px solid transparent;cursor:pointer;white-space:nowrap}
+.nl:hover{border-color:#B9FF66}.nl.on{color:#B9FF66;border-color:#B9FF66}
+.card.qa{cursor:pointer;transition:background .2s,color .2s,transform .15s,box-shadow .15s}
+.card.qa:hover{background:#B9FF66;transform:translateY(-4px);box-shadow:0 9px 0 #191A23}
+.card.qa:active{background:#191A23;color:#fff;transform:translateY(3px);box-shadow:0 1px 0 #191A23}
+.shadowtxt{text-shadow:0 2px 10px rgba(25,26,35,.85)}
+header{color:#fff}.pill{color:#191A23}
+.card-xl{padding:56px 48px;min-height:440px;display:flex;flex-direction:column;justify-content:space-between;gap:40px;cursor:pointer;transition:background .2s,color .2s,transform .15s,box-shadow .15s}
+.card-xl h2{font-size:38px;line-height:1.1}.card-xl p{font-size:20px}
+.card.card-xl:hover{background:#B9FF66;color:#191A23;transform:translateY(-6px);box-shadow:0 11px 0 #191A23}
+.card.card-xl:active{background:#191A23;color:#fff;transform:translateY(4px);box-shadow:0 1px 0 #191A23}
+.card-xl:hover .btn{background:#191A23;color:#fff}
+.card-xl:active .btn{background:#B9FF66;color:#191A23}
+.btn-lg{padding:18px 26px;font-size:20px;border-radius:14px}
+#toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:60;max-width:90vw}
+#toast div{background:#191A23;color:#fff;border:1.5px solid #B9FF66;border-radius:14px;padding:10px 18px;font-weight:500}
+#toast div.err{background:#fff;color:#191A23;border-color:#191A23;box-shadow:0 4px 0 #191A23}
+</style>
+</head>
+<body>
+<div id="app" class="max-w-7xl mx-auto px-4 pb-16"></div>
+<div id="modal"></div>
+<div id="toast"></div>
+<script>
+/* ============ API layer ============ */
+const API='http://localhost:5000';
+const api=async(path,opts={})=>{
+  let r;try{r=await fetch(API+path,opts)}catch(e){throw new Error('Cannot reach the backend at '+API+'. Is uvicorn running?')}
+  if(!r.ok){let d='';try{const j=await r.json();d=typeof j.detail==='string'?j.detail:JSON.stringify(j.detail)}catch(e){}throw new Error(d||r.statusText)}
+  return r.json()};
+const cap=s=>s?s[0].toUpperCase()+s.slice(1):'';
+const fromTeacher=t=>({id:String(t.id),name:t.name,ini:t.initials||'',desig:t.designation||'Faculty',dept:t.department||'IT',email:t.email||'',phone:t.phone||'',cabin:t.cabin||'',research:t.research||'',qual:t.qualification||'',photo:t.photo||''});
+const fromOD=o=>({id:String(o.id),student:o.student_name||'',roll:o.register_number||'',dept:o.department||'',ys:o.year_section||'',mentor:String(o.teacher_id),cat:o.category||'',event:o.event||o.reason||'',venue:o.venue||'',from:o.from_date,to:o.to_date,proofUrl:o.proof_url||'',status:cap(o.status),remark:o.remark||''});
+async function load(){
+  const [t,o]=await Promise.all([api('/teachers'),api('/od-requests')]);
+  S.f=t.map(fromTeacher);S.o=o.map(fromOD)}
+async function refresh(){await load();render()}
+function toast(m,err){const el=document.createElement('div');el.textContent=m;if(err)el.className='err';$('#toast').appendChild(el);setTimeout(()=>el.remove(),err?6000:3000)}
+const busy=(b,v)=>{if(b)b.disabled=v};
+
+/* ============ Static data ============ */
+const DEPTS=['Biomedical','Chemical','Civil','CSE','EEE','ECE','IT','Mechanical'],CATS=['Hackathon','Workshop','Symposium','Sports','Paper Presentation'];
+const CATLEG='MD: Multidisciplinary, AEC: Ability Enhancement Course, MC: Major Core, VAC: Value Added Courses, SEC: Skill Enhancement Course, EAA: Extra Academic Activity';
+const C=(code,title,fac,ini,cat,cr)=>({code,title,fac,ini,cat,cr});
+const COURSES=[C('25MA1039','Mathematics I',['ssk'],'SSK','MD','4'),C('25IT1031','Electrical and Electronics Essentials for IT',['vsh'],'VSH','MC','2'),C('25EN1731','Communicative English',['nv'],'NV','AEC','3'),C('25IT1731','Computational Thinking and Problem Solving with Python',['ksg'],'KSG','MC','3'),C('25IT1733','Introduction to Web Programming',['es'],'ES','MC','3'),C('25UC1031','Professional Ethics and Human Values',['vdd'],'VDD','VAC','2'),C('25IT1831','Introduction to AR/VR',['sa'],'SA','SEC','2'),C('25IT1833','Open-Source Tools and Prompt Engineering',['ksg'],'KSG','SEC','2'),C('25EA1031','Extra Academic Activity I*',['li','bn'],'LI/BN','VAC','1*')];
+/* courses link to faculty by lower-case initials */
+const fc=f=>COURSES.filter(c=>c.fac.includes((f.ini||'').toLowerCase()));
+const finame=i=>(S.f.find(x=>x.ini.toLowerCase()===i)||{}).name||i.toUpperCase();
+
+let S={f:[],o:[],user:null,tab:'dir',q:'',dept:'All',msg:'',odc:false};
+const $=s=>document.querySelector(s);
+const esc=t=>String(t??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const ini=n=>n.replace(/^(Dr|Mr|Ms|Mrs)\.?\s+/,'').split(' ').map(w=>w[0]).slice(0,2).join('');
+const fname=id=>(S.f.find(x=>x.id===id)||{}).name||'—';
+const fmt=d=>d?new Date(d).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'}):'';
+const frame=f=>`<div class="frame">${f.photo?`<img src="${esc(f.photo)}" alt="">`:esc(ini(f.name))}</div>`;
+const fld=(l,n,v='',t='text',x='')=>`<div><label for="${n}">${l}</label><input class="inp" id="${n}" name="${n}" type="${t}" value="${esc(v)}" ${x}></div>`;
+const sel=(l,n,opts,v='')=>`<div><label for="${n}">${l}</label><select class="inp" id="${n}" name="${n}">${opts.map(o=>`<option ${o===v?'selected':''}>${esc(o)}</option>`).join('')}</select></div>`;
+
+function login(){const L=[['about','About'],['roles','Roles'],['how','How it works'],['depts','Departments'],['courses','Courses'],['contact','Contact']];
+const step=[['Student applies','Fill in the event, dates, your mentor and a proof document.'],['Request reaches the mentor','It appears in the mentor’s approvals list as Pending.'],['Mentor decides','Preview the proof, add remarks, then approve or reject.'],['Student sees the result','Status and remarks update right away in My ODs.']];
+const connected=new URLSearchParams(location.search).has('connected')?`<p class="mb-4"><span class="badge s-Approved">OneDrive connected. Choose Faculty mentor below to continue.</span></p>`:'';
+return hdr(L.map(([k,l])=>`<button class="nl" data-a="scroll" data-id="${k}">${l}</button>`).join(''))+`
+<section class="grid lg:grid-cols-2 gap-10 items-center py-8"><div>${connected}<h1 class="text-5xl md:text-7xl font-bold mb-5"><span class="tag">Project Nexus</span></h1><h2 class="text-3xl md:text-4xl font-bold text-white mb-4 shadowtxt">Faculty profiles and OD approvals, all in one place.</h2><p class="text-lg text-white mb-6 shadowtxt max-w-xl">Find faculty and the courses they handle, apply for On-Duty leave with proof, and get a mentor’s decision without chasing paperwork.</p><div class="flex flex-wrap gap-3"><button class="btn btn-lg lime" data-a="scroll" data-id="roles">Get started</button><button class="btn btn-lg ghost" data-a="scroll" data-id="how">See how it works</button></div></div>
+<div class="grid grid-cols-2 gap-6"><div class="card dark"><div class="text-5xl font-bold text-[#B9FF66]">${S.f.length}</div><p>Faculty profiles</p></div><div class="card grey"><div class="text-5xl font-bold">${COURSES.length}</div><p>Courses listed</p></div><div class="card grey"><div class="text-5xl font-bold">${DEPTL.length}</div><p>Departments</p></div><div class="card" style="background:#B9FF66"><div class="text-5xl font-bold">3</div><p>Roles: student, mentor, admin</p></div></div></section>
+<section id="about" class="py-10"><h2 class="text-3xl font-bold mb-6"><span class="tag">About</span></h2><div class="grid md:grid-cols-3 gap-6">
+<div class="card grey"><h3 class="font-bold text-xl mb-2">Faculty profiles</h3><p>A searchable directory with department filters, cabin and courses handled. Faculty edit their own details.</p></div>
+<div class="card" style="background:#B9FF66"><h3 class="font-bold text-xl mb-2">OD applications</h3><p>Students pick a mentor, enter event details and dates, and upload a PDF or image as proof.</p></div>
+<div class="card dark"><h3 class="font-bold text-xl mb-2">Mentor approvals</h3><p>Mentors see only the requests assigned to them and approve or reject with remarks.</p></div></div></section>
+<section id="roles" class="py-10"><h2 class="text-3xl font-bold mb-8"><span class="tag">Choose your role</span></h2><div class="grid md:grid-cols-3 gap-10">
+<div class="card grey card-xl" data-a="login" data-r="student"><div><h2 class="font-bold mb-4">Student</h2><p>Browse faculty and courses, apply for OD and track approvals.</p></div><button class="btn btn-lg" data-a="login" data-r="student">Enter as student</button></div>
+<div class="card card-xl" data-a="login" data-r="faculty"><div><h2 class="font-bold mb-4">Faculty mentor</h2><select id="lf" class="inp" style="padding:16px;font-size:18px" aria-label="Choose faculty">${S.f.map(f=>`<option value="${f.id}">${esc(f.name)}</option>`).join('')}</select></div><button class="btn btn-lg lime" data-a="login" data-r="faculty">Enter as faculty</button></div>
+<div class="card dark card-xl" data-a="login" data-r="admin"><div><h2 class="font-bold mb-4">Admin</h2><p>Manage the directory and see every OD request.</p></div><button class="btn btn-lg lime" data-a="login" data-r="admin">Enter as admin</button></div></div></section>
+<section id="how" class="py-10"><h2 class="text-3xl font-bold mb-6"><span class="tag">How OD approval works</span></h2><div class="card dark">${step.map(([t,d],i)=>`<div class="flex gap-5 items-start py-4 ${i?'border-t border-white/25':''}"><div class="text-4xl font-bold text-[#B9FF66] w-12">${i+1}</div><div><h3 class="font-bold text-xl">${t}</h3><p class="text-white/80">${d}</p></div></div>`).join('')}</div></section>
+<section id="depts" class="py-10"><h2 class="text-3xl font-bold mb-6"><span class="tag">Departments</span></h2>${deptsView(false)}</section>
+<section id="courses" class="py-10"><h2 class="text-3xl font-bold mb-6"><span class="tag">Courses</span></h2>${coursesView()}</section>
+<section id="contact" class="py-10"><div class="card dark flex flex-wrap items-center justify-between gap-6"><div><h2 class="text-3xl font-bold mb-2">Let’s make things happen</h2><p class="text-white/80">Pick a role and start using Project Nexus.</p></div><button class="btn btn-lg lime" data-a="scroll" data-id="roles">Get started</button></div>
+<p class="text-center mt-6"><span class="badge s-Pending">Project Nexus · Faculty Profile Management and OD Leave Approval System</span></p></section>`}
+
+function hdr(links){const u=S.user;return `<header class="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 py-3 px-5 mb-8"><button class="nl font-bold text-xl" data-a="home">✦ Project Nexus</button>
+<nav class="flex flex-wrap items-center gap-x-5 gap-y-2 ml-auto text-[15px]" aria-label="Sections">${links}${u?`<span class="badge s-Pending">${esc(u.name)} · ${u.role}</span><button class="btn lime" data-a="logout">Log out</button>`:`<button class="btn lime" data-a="scroll" data-id="roles">Get started</button>`}</nav></header>`}
+function nav(){const u=S.user,t=[['home','Overview'],['dir','Faculty'],['courses','Courses'],['depts','Departments']];
+if(u.role==='student')t.push(['od','Apply for OD'],['track','My ODs']);
+if(u.role==='faculty')t.push(['approve','Approvals'],['edit','My profile']);
+if(u.role==='admin')t.push(['all','All ODs']);
+const pend=u.role==='faculty'?S.o.filter(o=>o.mentor===u.fid&&o.status==='Pending').length:0;
+return hdr(t.map(([k,l])=>`<button class="nl ${S.tab===k?'on':''}" data-a="tab" data-t="${k}">${l}${k==='approve'&&pend?` (${pend})`:''}</button>`).join(''))}
+const DEPTL=[['Biomedical','Biomedical Engineering'],['Chemical','Chemical Engineering'],['Civil','Civil and Infrastructure Engineering'],['CSE','Computer Science and Engineering'],['EEE','Electrical and Electronics Engineering'],['ECE','Electronics and Communication Engineering'],['IT','Information Technology'],['Mechanical','Mechanical Engineering']];
+function deptsView(go){return `<div class="card">${DEPTL.map(([k,n])=>{const c=S.f.filter(f=>f.dept===k).length;return `<div class="flex flex-wrap items-center justify-between gap-3 py-4 border-b border-[#191A23]/30 last:border-0"><h3 class="font-bold text-xl">Dept. of ${n}</h3><div class="flex items-center gap-3"><span class="badge s-Pending">${c} faculty</span>${go?`<button class="btn ghost" data-a="deptgo" data-d="${k}">View faculty</button>`:''}</div></div>`}).join('')}</div>`}
+function homeView(){const u=S.user,m=u.role==='student'?S.o.filter(o=>o.student===u.name):u.role==='faculty'?S.o.filter(o=>o.mentor===u.fid):S.o,n=s=>m.filter(o=>o.status===s).length;
+const st=[[S.f.length,'Faculty members','dark'],[COURSES.length,'Courses listed','grey'],[n('Pending'),'Pending ODs','grey'],[n('Approved'),'Approved ODs','']];
+const qa={student:[['od','Apply for OD','Submit event details, dates and proof to your mentor.'],['track','My ODs','Check status and mentor remarks.'],['dir','Find a mentor','Search faculty by name, course or department.']],
+faculty:[['approve','Approvals','Review requests assigned to you.'],['edit','My profile','Update your contact details and photo.'],['courses','Courses','See all courses and who handles them.']],
+admin:[['all','All ODs','See every request and its status.'],['dir','Faculty directory','Browse all faculty profiles.'],['depts','Departments','Faculty count for each department.']]}[u.role];
+return `<h2 class="text-3xl font-bold mb-6"><span class="tag">Welcome, ${esc(u.name)}</span></h2><div class="grid grid-cols-2 lg:grid-cols-4 gap-6 mb-10">${st.map(([v,l,c])=>`<div class="card ${c}"><div class="text-5xl font-bold ${c==='dark'?'text-[#B9FF66]':''}">${v}</div><p class="mt-1">${l}</p></div>`).join('')}</div>
+<h3 class="text-2xl font-bold mb-5"><span class="tag">Quick actions</span></h3><div class="grid md:grid-cols-3 gap-6">${qa.map(([t,a,d])=>`<div class="card qa grey" data-a="tab" data-t="${t}"><h4 class="font-bold text-xl mb-2">${a}</h4><p class="text-sm">${d}</p></div>`).join('')}</div>`}
+
+function cards(){const q=S.q.toLowerCase();
+const l=S.f.filter(f=>(S.dept==='All'||f.dept===S.dept)&&(f.name+f.ini+f.desig+f.research+f.cabin+fc(f).map(c=>c.title+c.code).join(' ')).toLowerCase().includes(q));
+if(!l.length)return `<div class="card grey md:col-span-3">No faculty match. Clear the search or pick another department.</div>`;
+return l.map(f=>`<article class="card relative"><button class="btn lime absolute top-4 right-4 !p-0 w-9 h-9 rounded-full grid place-items-center" style="border-radius:999px" data-a="view" data-id="${f.id}" aria-label="View ${esc(f.name)}">↗</button>
+<div class="flex gap-4 items-center">${frame(f)}<div class="pr-8"><h3 class="font-bold leading-tight">${esc(f.name)}</h3><p class="text-sm">${esc(f.desig)}</p></div></div>
+<hr class="my-3 border-[#191A23]"><div class="flex flex-wrap gap-2 items-center"><span class="tag text-sm">${esc(f.dept)}</span><span class="badge s-Pending">${esc(f.ini)}</span></div><p class="text-sm mt-2">${fc(f).length} course${fc(f).length===1?'':'s'} · Cabin ${esc(f.cabin||'—')}</p></article>`).join('')}
+
+function dir(){return `<h2 class="text-3xl font-bold mb-5"><span class="tag">Faculty directory</span></h2>
+<div class="flex flex-col md:flex-row gap-3 mb-6"><input id="q" class="inp md:max-w-sm" placeholder="Search name, subject or cabin" aria-label="Search faculty" value="${esc(S.q)}">
+<div class="flex flex-wrap gap-2" id="pills">${pills()}</div></div><div id="grid" class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">${cards()}</div>`}
+const pills=()=>['All',...DEPTS].map(d=>`<button class="pill ${S.dept===d?'on':''}" data-a="dept" data-d="${d}">${d}</button>`).join('');
+
+function odForm(){return `<h2 class="text-3xl font-bold mb-5"><span class="tag">Apply for On-Duty leave</span></h2>
+<form id="odf" class="card grey grid md:grid-cols-2 gap-4">
+${fld('Student name','student',S.user.name)}${fld('Register / roll number','roll','2025IT0001','text','required')}
+${sel('Department','dept',DEPTS,'IT')}${fld('Year & section','ys','I / A')}
+<div><label for="mentor">Assigned faculty mentor (type to search)</label><input class="inp" id="mentor" name="mentor" list="ml" required placeholder="Start typing a name"><datalist id="ml">${S.f.map(f=>`<option value="${esc(f.name)}">`).join('')}</datalist></div>
+${sel('OD category','cat',CATS)}${fld('Event name','event','','text','required')}${fld('Venue / organizer','venue','','text','required')}
+${fld('From','from','','datetime-local','required')}${fld('To','to','','datetime-local','required')}
+<div class="md:col-span-2"><label for="proof">Proof document (PDF or image)</label><input class="inp" id="proof" name="proof" type="file" accept=".pdf,image/*" required></div>
+<div class="md:col-span-2 flex items-center gap-4"><button class="btn lime" type="submit">Submit OD request</button><span id="err" class="text-sm font-bold"></span></div></form>`}
+
+function track(mine){const l=S.o.filter(o=>mine?o.student===S.user.name:true);
+if(!l.length)return `<div class="card grey">No OD requests yet.${mine?' Use “Apply for OD” to submit your first one.':''}</div>`;
+return `<div class="grid gap-5">${l.map(o=>`<article class="card"><div class="flex flex-wrap justify-between gap-2"><h3 class="font-bold text-lg">${esc(o.event)}</h3><span class="badge s-${o.status}">${o.status}</span></div>
+<p class="text-sm mt-1">${esc(o.student)} (${esc(o.roll)}) · ${esc(o.cat)} · ${esc(o.venue)}</p><p class="text-sm">${fmt(o.from)} to ${fmt(o.to)}</p>
+<p class="text-sm">Mentor: ${esc(fname(o.mentor))}</p>${o.proofUrl?`<a class="text-sm underline font-bold" href="${esc(o.proofUrl)}" target="_blank" rel="noopener">Open proof</a>`:''}${o.remark?`<p class="mt-2 p-3 rounded-xl bg-[#F3F3F3] border border-[#191A23] text-sm">Remarks: ${esc(o.remark)}</p>`:''}</article>`).join('')}</div>`}
+
+const odBox=()=>`<div class="card ${S.odc?'':'grey'} mb-6 flex flex-wrap items-center justify-between gap-3"><p class="text-sm">${S.odc?'Your OneDrive is connected. Student proofs are saved to Faculty_Portal/OD_Requests.':'Connect your OneDrive so students can upload proofs to you. Until then, OD submissions to you will fail.'}</p>${S.odc?'<span class="badge s-Approved">Connected</span>':'<button class="btn lime" data-a="connect">Connect OneDrive</button>'}</div>`;
+
+function approve(){const l=S.o.filter(o=>o.mentor===S.user.fid).sort((a,b)=>(a.status==='Pending'?0:1)-(b.status==='Pending'?0:1));
+if(!l.length)return odBox()+`<div class="card grey">No requests assigned to you yet.</div>`;
+return odBox()+`<div class="grid md:grid-cols-2 gap-6">${l.map(o=>`<article class="card ${o.status==='Pending'?'grey':''}"><div class="flex justify-between gap-2"><h3 class="font-bold text-lg">${esc(o.event)}</h3><span class="badge s-${o.status}">${o.status}</span></div>
+<p class="text-sm mt-1">${esc(o.student)} · ${esc(o.roll)} · ${esc(o.dept)} ${esc(o.ys)}</p><p class="text-sm">${esc(o.cat)} at ${esc(o.venue)}</p><p class="text-sm mb-3">${fmt(o.from)} to ${fmt(o.to)}</p>
+<button class="btn ghost mb-3" data-a="proof" data-id="${o.id}">${o.proofUrl?'Open proof':'No proof attached'}</button>
+${o.status==='Pending'?`<label for="r${o.id}">Remarks (optional)</label><input class="inp mb-3" id="r${o.id}"><div class="flex gap-3"><button class="btn lime" data-a="dec" data-id="${o.id}" data-s="Approved">Approve</button><button class="btn" data-a="dec" data-id="${o.id}" data-s="Rejected">Reject</button></div>`:(o.remark?`<p class="text-sm">Remarks: ${esc(o.remark)}</p>`:'')}</article>`).join('')}</div>`}
+
+function edit(){const f=S.f.find(x=>x.id===S.user.fid);
+return `<h2 class="text-3xl font-bold mb-5"><span class="tag">Edit my profile</span></h2>${odBox()}<form id="ef" class="card grey grid md:grid-cols-2 gap-4">
+<div class="md:col-span-2 flex items-center gap-4">${frame(f)}<div class="grow"><label for="photo">Profile photo</label><input class="inp" id="photo" type="file" accept="image/*"></div></div>
+${fld('Full name','name',f.name)}${fld('Initials','initials',f.ini)}${fld('Designation','desig',f.desig)}${sel('Department','dept',DEPTS,f.dept)}${fld('Email','email',f.email,'email')}${fld('Phone','phone',f.phone)}${fld('Cabin location','cabin',f.cabin)}
+<div class="md:col-span-2">${fld('Research areas / subjects handled','research',f.research)}</div><div class="md:col-span-2">${fld('Academic qualifications','qual',f.qual)}</div>
+<div class="md:col-span-2 flex items-center gap-4"><button class="btn lime" type="submit">Save profile</button><span class="text-sm font-bold">${esc(S.msg)}</span></div></form>`}
+
+function coursesView(){return `<div class="card tbl"><table class="w-full text-left text-sm" style="min-width:760px"><thead><tr class="border-b-2 border-[#191A23]"><th class="p-3">Sub code</th><th class="p-3">Course title</th><th class="p-3">Faculty name</th><th class="p-3">Initial</th><th class="p-3">Category</th><th class="p-3">Credits</th></tr></thead><tbody>${COURSES.map(c=>`<tr class="border-b border-[#191A23]/30"><td class="p-3 font-bold">${c.code}</td><td class="p-3">${esc(c.title)}</td><td class="p-3">${c.fac.map(finame).map(esc).join(' / ')}</td><td class="p-3">${esc(c.ini)}</td><td class="p-3"><span class="badge s-Approved">${c.cat}</span></td><td class="p-3">${c.cr}</td></tr>`).join('')}</tbody></table>
+<p class="text-xs mt-4">${CATLEG}. *Extra Academic Activity: Personality Evolution Programme (PEP), MULYA PRAVAH 2.0 – Inculcation of Human Values and Professional Ethics in Higher Education Institutions.</p></div>`}
+function render(){const a=$('#app');if(!S.user){a.innerHTML=login();return}
+const v={home:homeView,depts:()=>`<h2 class="text-3xl font-bold mb-5"><span class="tag">Departments</span></h2>`+deptsView(true),courses:()=>`<h2 class="text-3xl font-bold mb-5"><span class="tag">Courses</span></h2>`+coursesView(),dir,od:odForm,track:()=>`<h2 class="text-3xl font-bold mb-5"><span class="tag">My OD requests</span></h2>`+track(true),approve:()=>`<h2 class="text-3xl font-bold mb-5"><span class="tag">OD approvals</span></h2>`+approve(),edit,all:()=>`<h2 class="text-3xl font-bold mb-5"><span class="tag">All OD requests</span></h2>`+track(false)}[S.tab];
+a.innerHTML=nav()+`<main>${v()}</main>`}
+const modal=h=>{$('#modal').innerHTML=h?`<div class="fixed inset-0 bg-[#191A23]/60 grid place-items-center p-4 z-50" data-a="close"><div class="card max-w-lg w-full max-h-[85vh] overflow-auto" role="dialog" aria-modal="true" onclick="event.stopPropagation()">${h}<button class="btn mt-4" data-a="close">Close</button></div></div>`:''};
+
+document.addEventListener('click',async e=>{if(e.target.closest('select'))return;const b=e.target.closest('[data-a]');if(!b)return;const a=b.dataset.a,d=b.dataset;
+try{
+if(a==='login'){const r=d.r;
+  if(r==='faculty'&&!S.f.length){toast('No faculty loaded from the backend.',true);return}
+  S.user=r==='student'?{role:r,name:'Demo Student'}:r==='admin'?{role:r,name:'Admin Office'}:{role:r,fid:$('#lf').value,name:fname($('#lf').value)};
+  S.tab='home';S.odc=false;
+  if(r==='faculty'){try{S.odc=(await api(`/teachers/${S.user.fid}/onedrive/status`)).connected}catch(x){}}
+  render();window.scrollTo(0,0)}
+else if(a==='logout'){S.user=null;history.replaceState(null,'',location.pathname);render()}
+else if(a==='tab'){S.tab=d.t;S.msg='';render();window.scrollTo(0,0)}
+else if(a==='dept'){S.dept=d.d;$('#pills').innerHTML=pills();$('#grid').innerHTML=cards()}
+else if(a==='view'){const f=S.f.find(x=>x.id===d.id);modal(`<div class="flex gap-4 items-center mb-4">${frame(f)}<div><h3 class="font-bold text-xl">${esc(f.name)}</h3><p>${esc(f.desig)}</p></div></div>
+<dl class="grid gap-2 text-sm"><div><b>Initial:</b> ${esc(f.ini)}</div><div><b>Department:</b> ${esc(f.dept)}</div><div><b>Cabin:</b> ${esc(f.cabin||'—')}</div><div><b>Email:</b> ${esc(f.email||'—')}</div><div><b>Phone:</b> ${esc(f.phone||'—')}</div>${f.research?`<div><b>Research:</b> ${esc(f.research)}</div>`:''}<div><b>Qualifications:</b> ${esc(f.qual||'—')}</div></dl><h4 class="font-bold mt-4 mb-1">Courses handled</h4><ul class="text-sm grid gap-1">${fc(f).map(c=>`<li><b>${c.code}</b> ${esc(c.title)} (${c.cat}, ${c.cr} credits)</li>`).join('')||'<li>None listed</li>'}</ul>`)}
+else if(a==='close'){modal('')}else if(a==='scroll'){const el=document.getElementById(d.id);if(el)el.scrollIntoView({behavior:'smooth'})}else if(a==='home'){if(S.user){S.tab='home';render()}window.scrollTo({top:0,behavior:'smooth'})}else if(a==='deptgo'){S.dept=d.d;S.tab='dir';render();window.scrollTo(0,0)}
+else if(a==='proof'){const o=S.o.find(x=>x.id===d.id);if(o.proofUrl)window.open(o.proofUrl,'_blank','noopener');else toast('No proof was stored for this request.',true)}
+else if(a==='connect'){const r=await api(`/teachers/${S.user.fid}/onedrive/connect`);window.location.href=r.login_url}
+else if(a==='dec'){busy(b,true);
+  await api(`/od-requests/${d.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:d.s.toLowerCase(),remark:$('#r'+d.id).value.trim()})});
+  toast('Request '+d.s.toLowerCase()+'.');await refresh()}
+}catch(err){busy(b,false);toast(err.message,true)}});
+
+document.addEventListener('input',e=>{if(e.target.id==='q'){S.q=e.target.value;$('#grid').innerHTML=cards()}});
+const read=f=>new Promise(r=>{if(!f||f.size>1500000)return r('');const x=new FileReader();x.onload=()=>r(x.result);x.readAsDataURL(f)});
+document.addEventListener('submit',async e=>{e.preventDefault();const f=e.target,v=Object.fromEntries(new FormData(f)),btn=f.querySelector('[type=submit]');
+try{
+if(f.id==='odf'){const m=S.f.find(x=>x.name===v.mentor);if(!m){$('#err').textContent='Pick a mentor from the list.';return}
+  if(v.to<=v.from){$('#err').textContent='“To” must be after “From”.';return}
+  busy(btn,true);$('#err').textContent='Uploading…';
+  const fd=new FormData();
+  fd.append('student_name',v.student);fd.append('register_number',v.roll);fd.append('department',v.dept);fd.append('year_section',v.ys);
+  fd.append('teacher_id',m.id);fd.append('category',v.cat);fd.append('event',v.event);fd.append('venue',v.venue);
+  fd.append('from_date',v.from);fd.append('to_date',v.to);fd.append('proof',f.proof.files[0]);
+  await api('/od-requests',{method:'POST',body:fd});   /* no Content-Type header: browser sets the multipart boundary */
+  S.user.name=v.student;toast('OD request submitted.');S.tab='track';await refresh()}
+if(f.id==='ef'){const p=S.f.find(x=>x.id===S.user.fid);busy(btn,true);
+  const body={name:v.name,initials:v.initials,designation:v.desig,department:v.dept,email:v.email,phone:v.phone,cabin:v.cabin,research:v.research,qualification:v.qual};
+  const ph=await read(f.photo.files[0]);if(ph)body.photo=ph;
+  await api(`/teachers/${p.id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  S.user.name=v.name;S.msg='Profile saved.';await refresh()}
+}catch(err){busy(btn,false);const el=$('#err');if(el)el.textContent=err.message;toast(err.message,true)}});
+
+/* ============ Start ============ */
+(async()=>{try{await load()}catch(err){$('#app').innerHTML=`<div class="card mt-10"><h2 class="text-2xl font-bold mb-2">Backend not reachable</h2><p>${esc(err.message)}</p><p class="text-sm mt-2">Start it with <code>uvicorn main:app --reload --port 5000</code>, then reload.</p></div>`;return}
+render()})();
+</script>
+</body>
+</html>
