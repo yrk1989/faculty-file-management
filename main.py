@@ -2,6 +2,7 @@ import os
 import shutil
 import tempfile
 from datetime import datetime
+from urllib.parse import quote
 from typing import Literal
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
@@ -134,10 +135,10 @@ def onedrive_status(teacher_id: int):
 @app.get("/callback")   # must match REDIRECT_URI in onedrive_service.py
 def callback(code: str = None, state: str = None, error: str = None):
     if error or not code or not state:
-        raise HTTPException(400, "OneDrive connection failed")
+        return RedirectResponse(f"{FRONTEND}/?connected=0&error={quote((error or 'OneDrive connection failed')[:200])}")
     result = od.save_teacher_token(state, code)
     if not result["success"]:
-        raise HTTPException(400, result["error"])
+        return RedirectResponse(f"{FRONTEND}/?connected=0&error={quote(str(result['error'])[:200])}")
     return RedirectResponse(f"{FRONTEND}/?connected=1")
 
 
