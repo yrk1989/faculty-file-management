@@ -96,14 +96,15 @@ class ODDecision(BaseModel):
 def upload_via_temp(file: UploadFile, teacher_id: int, doc_type: str, student_name: str):
     """Save the upload to a temp file, send it to the teacher's OneDrive, clean up.
     doc_type: "assignment" | "od_permission" | "od_proof" """
-    suffix = os.path.splitext(file.filename)[1]
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        shutil.copyfileobj(file.file, tmp)
-        tmp_path = tmp.name
+    # keep the original file name so it is readable in OneDrive
+    tmp_dir = tempfile.mkdtemp()
+    tmp_path = os.path.join(tmp_dir, od._safe_name(os.path.basename(file.filename or "file")))
     try:
+        with open(tmp_path, "wb") as tmp:
+            shutil.copyfileobj(file.file, tmp)
         result = od.upload_to_teacher_onedrive(str(teacher_id), tmp_path, doc_type, student_name)
     finally:
-        os.remove(tmp_path)
+        shutil.rmtree(tmp_dir, ignore_errors=True)
     if not result["success"]:
         raise HTTPException(502, result["error"])
     return result["file_url"]
@@ -341,6 +342,21 @@ def submit_od_proof(od_id: int, register_number: str = Form(...), file: UploadFi
         "proof_url": url,
         "proof_submitted_at": datetime.utcnow().isoformat(),
     })
+
+
+# Used by the website: send one file straight to a teacher's OneDrive
+@app.post("/onedrive/upload")
+def onedrive_upload(
+    teacher_id: int = Form(...),
+    doc_type: str = Form(...),
+    student_name: str = Form(...),
+    file: UploadFile = File(...),
+):
+    if not storage.get("teachers", teacher_id):
+        raise HTTPException(404, "Teacher not found")
+    if doc_type not in ("assignment", "od_permission", "od_proof"):
+        raise HTTPException(400, "Invalid document type")
+    return {"file_url": upload_via_temp(file, teacher_id, doc_type, student_name)}
 
 
 # NEW (optional): Excel report. Needs the build_od_excel change in section 3.
